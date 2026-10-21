@@ -53,6 +53,8 @@ O painel envia mensagens ao executor; a extensão mantém progresso em `chrome.s
 
 ## Desenvolvimento
 
+A versão 1.22 remove a importação obrigatória e monta a fila a partir das duas listas atuais. O fluxo foi validado em uma execução real com remoções confirmadas e sem falhas registradas; dados da conta e logs dessa execução não são publicados. Os testes automatizados continuam usando dados sintéticos e não garantem compatibilidade futura com rotas internas do Instagram.
+
 Requer Node.js 20 ou superior para os testes; não há dependências npm em tempo de execução.
 
 ```sh
