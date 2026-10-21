@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.local-auth/
+private/
+*.har
+*.zip
+*.log
+instagram-progresso*.json
+instagram-diagnostico*.json
+instagram-stories-auto*.json
+candidates.json
+.DS_Store
+Thumbs.db
