@@ -1,42 +1,38 @@
 # Instagram Unfollow Bot
 
-Extensão local para Chrome e Edge que cruza uma lista importada com seguidores e contas seguidas atuais e executa unfollows dos candidatos elegíveis. Usa a sessão conectada, sem credenciais fixadas no repositório.
+Extensão local para Chrome e Edge que identifica a conta conectada, busca as listas atuais de seguidores e contas seguidas e compara as duas para encontrar quem não segue de volta. Não precisa de export do Instagram nem arquivo importado.
 
 ## Recursos
 
-- Um botão para carregar listas, validar a conta, executar, pausar e retomar.
-- Importação de candidatos locais, com conta esperada explícita.
-- Proteção dos seguidores encontrados atualmente e dos seguidores presentes no arquivo importado.
+- Carregar listas e comparar sem remover ninguém.
+- Iniciar com nova leitura, validar a conta, executar, pausar e retomar.
+- Comparação por username e ID; seguidores reconhecidos por ID são protegidos mesmo se o nome mudou.
+- Listas e resultado da comparação registrados no armazenamento local da extensão.
 - 20 tentativas por lote e pausa preventiva de 30 segundos.
 - Falhas isoladas ficam pendentes; 5 falhas GraphQL consecutivas interrompem. Restrições explícitas e sessão inválida interrompem imediatamente.
-- Diagnóstico sem unfollow e exportação local de progresso.
+- Diagnóstico sem unfollow e exportação local do progresso, listas e candidatos.
 
-## Preparar e usar a lista
+## Como usar
 
-Use sua exportação JSON do Instagram para produzir o formato abaixo. Crie o arquivo fora do repositório, ou na pasta ignorada `private/`. O exemplo contém somente identificadores fictícios e não é uma lista pronta para executar.
+1. Entre no Instagram e abra a extensão.
+2. Use **Carregar listas e comparar (sem remover)** para identificar a conta conectada, percorrer seguidores e contas seguidas e ver as quantidades.
+3. A fila contém quem está na lista de contas seguidas e não aparece na lista de seguidores, comparando também os IDs. As duas listas e os candidatos são salvos como um snapshot local.
+4. Clique **Iniciar** quando desejar executar unfollows reais. O bot faz uma leitura nova antes da remoção; não reutiliza cegamente a lista anterior.
+5. Use **Pausar/Retomar** para controlar a execução e **Baixar log** para exportar o progresso e o snapshot local.
 
-```json
-{
-  "source": "instagram-export",
-  "account": "conta_exemplo",
-  "following": 3,
-  "followers": 1,
-  "users": ["perfil_exemplo_a", "perfil_exemplo_b"],
-  "protectedFollowers": ["seguidor_exemplo"]
-}
-```
+Fechar o painel não interrompe a execução. Uma requisição já enviada pode concluir após pausar. Recarregar a página encerra o executor atual; iniciar novamente faz nova preparação.
 
-`users` contém os candidatos que você segue e que não seguem você no export; `followers` é a quantidade de seguidores únicos do export; `following` é o total seguido no export; `protectedFollowers` contém todos os seguidores do export, sem duplicatas. Usernames devem estar em minúsculas e `account` deve coincidir com a conta conectada. Não coloque tokens nesse arquivo.
+## Integridade das listas
 
-Importe pelo painel. Clique **Iniciar** apenas quando desejar executar unfollows reais: o fluxo carrega e valida as listas e depois começa as remoções automaticamente. Fechar o painel não interrompe a execução. **Pausar** impede a próxima ação, mas uma requisição já enviada pode concluir.
+A preparação invalida o snapshot anterior antes de começar. Se a paginação repetir cursor, não produzir novos perfis, indicar continuação sem cursor, atingir o limite de páginas ou apresentar erro HTTP, a remoção não é liberada. Quando a resposta de identidade informa totais independentes, o bot exige correspondência com as quantidades lidas.
 
-Contagens atuais podem divergir do export. O executor usa IDs encontrados na leitura atual e mantém a proteção do export; candidatos sem ID ficam pendentes. Isso não garante completude de uma lista parcialmente retornada pelo Instagram. Recarregar a página encerra o executor atual; iniciar novamente faz nova preparação.
+Quando o Instagram não informa totais independentes, o log registra essa limitação: chegar ao fim da paginação não prova completude absoluta. A comparação representa as listas retornadas naquele momento e pode ficar desatualizada com mudanças posteriores. Não há mais a proteção adicional baseada em seguidores de um export antigo. A conta é conferida novamente ao concluir a leitura e antes de remover.
 
 ## Estrutura e origem
 
 ```text
 extension/  manifest, painel, coordenador e executor
-tests/      validações do importador e configuração genérica
+tests/      testes de leitura, comparação, falhas e conta divergente
 ```
 
 O trabalho começou com investigação do projeto MIT `gonzalopezgil/insta-unfollow-cli` e evoluiu para uma extensão separada. O CLI original, seu histórico Git e dados de conta não são distribuídos aqui. Veja `THIRD_PARTY_NOTICES.md` para atribuição.

@@ -33,9 +33,7 @@ $('toggle').onclick = async () => {
     let message = {kind:'ig-local-toggle'};
     if (!worker.pipelineActive) {
       const pageContext = await context(current);
-      const {igLocalInput:data} = await chrome.storage.local.get('igLocalInput');
-      if (!data) throw new Error('Importe sua lista local antes de iniciar.');
-      message = {...message,data,pageContext};
+      message = {...message,pageContext};
     }
     const response = await chrome.tabs.sendMessage(current.id,message);
     if (response.error) throw new Error(response.error);
@@ -48,8 +46,8 @@ function download(data,name) {
   link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(link.href),1000);
 }
 $('download').onclick = async () => {
-  const data = await chrome.storage.local.get(['igLocalState','igLocalPreparation','igLocalPreparationHistory','igLocalHttp','igLocalControl']);
-  download({exportedAt:new Date().toISOString(),state:data.igLocalState,preparation:data.igLocalPreparation,preparationHistory:data.igLocalPreparationHistory,http:data.igLocalHttp,control:data.igLocalControl},'instagram-progresso.json');
+  const data = await chrome.storage.local.get(['igLocalState','igLocalPreparation','igLocalPreparationHistory','igLocalHttp','igLocalControl','igLocalSnapshot']);
+  download({exportedAt:new Date().toISOString(),state:data.igLocalState,preparation:data.igLocalPreparation,preparationHistory:data.igLocalPreparationHistory,http:data.igLocalHttp,control:data.igLocalControl,snapshot:data.igLocalSnapshot},'instagram-progresso.json');
 };
 async function refresh() {
   const data = await chrome.storage.local.get(['igLocalState','igLocalPreparation','igLocalControl','igLocalDiagnostic','igLocalSnapshot']);
@@ -57,7 +55,8 @@ async function refresh() {
   let worker;
   try {const current = await tab();worker = await chrome.tabs.sendMessage(current.id,{kind:'ig-local-status'});}catch{}
   const active = worker?.pipelineActive;
-  $('importList').disabled = !!active;
+  $('loadLists').disabled = !!worker?.running;
+  $('account').textContent = data.igLocalSnapshot?.account || data.igLocalPreparation?.account || 'Identificada ao carregar listas';
   const snapshot = data.igLocalSnapshot;
   const validSnapshot = snapshot?.accountId && snapshot.following && snapshot.followers;
   const displayNumber = number => new Intl.NumberFormat('pt-BR').format(number);
@@ -66,6 +65,7 @@ async function refresh() {
   const done = new Set(state?.done ?? []);
   const remaining = validSnapshot ? Object.keys(snapshot.following).filter(name => snapshot.candidates ? snapshot.candidates.includes(name) && !snapshot.followers[name] && !done.has(name) : false).length : null;
   $('following').textContent = following == null ? '—' : displayNumber(following);
+  $('followers').textContent = validSnapshot ? displayNumber(Object.keys(snapshot.followers).length) : '—';
   $('estimated').textContent = following == null ? '—' : displayNumber(Math.max(0,following - removedAfterRead));
   $('remaining').textContent = validSnapshot && snapshot.candidates ? displayNumber(remaining) : '—';
   $('removed').textContent = displayNumber(active && control?.phase === 'preparing' ? 0 : state?.currentRun?.confirmed ?? 0);
@@ -98,18 +98,14 @@ $('diagnose').onclick = async () => {
 };
 $('downloadDiagnostic').onclick = async () => {
   const {igLocalDiagnostic} = await chrome.storage.local.get('igLocalDiagnostic');
-  if (igLocalDiagnostic) download(igLocalDiagnostic,'instagram-diagnostico-v1.20.json');
+  if (igLocalDiagnostic) download(igLocalDiagnostic,'instagram-diagnostico-v1.22.json');
 };
 refresh(); setInterval(refresh,1000);
 
-$('importList').onchange = async event => {
-  try {
-    const file = event.target.files[0]; if (!file) return;
-    if (file.size > 10 * 1024 * 1024) throw new Error('Arquivo acima de 10 MB.');
-    const data = validateLocalInput(JSON.parse(await file.text()));
-    await chrome.storage.local.set({igLocalInput:data});
-    $('account').textContent = data.account;
-    $('notice').textContent = 'Lista importada localmente: ' + data.users.length + ' candidatos.';
-  } catch (error) { $('notice').textContent = error.message; }
+$('loadLists').onclick = async () => {
+  if (busy) return;
+  busy=true; $('loadLists').disabled=true; $('notice').textContent='';
+  try {const {current}=await attach();const response=await chrome.tabs.sendMessage(current.id,{kind:'ig-local-prepare'});if(response.error)throw new Error(response.error);}
+  catch(error){$('notice').textContent=error.message;}
+  finally {busy=false;await refresh();}
 };
-chrome.storage.local.get('igLocalInput').then(({igLocalInput})=>{if(igLocalInput)$('account').textContent=igLocalInput.account;});

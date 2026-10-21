@@ -1,9 +1,10 @@
-<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Fila local v1.20</title>
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Fila local v1.22</title>
 <style>body{font:14px system-ui;width:390px;padding:18px;background:#101820;color:#edf4fa}button{padding:10px;margin:6px 0;cursor:pointer;border-radius:8px;border:0}#toggle{width:100%;background:#71dfb2;color:#10251b;font-weight:700;font-size:16px}pre{white-space:pre-wrap;max-height:220px;overflow:auto;font-size:12px;background:#192733;padding:10px;border-radius:8px}small{color:#bacad6;display:block;line-height:1.5}select{max-width:100%;margin-top:8px}#notice{color:#ffc582}details{margin-top:16px}h2{margin-top:0}</style>
 <style>.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.metric{background:#192b3a;border:1px solid #29465b;border-radius:12px;padding:13px}.metric span{display:block;font-size:12px;color:#c0d1dd}.metric strong{display:block;font-size:32px;line-height:1.2;margin:6px 0;color:#79c8ff;font-variant-numeric:tabular-nums}.metric.green{background:#17372c;border-color:#2c5c47}.metric.green strong{color:#71dfb2}.metric small{font-size:10px}.timer{border:1px solid #305d7d;background:#152f43;border-radius:12px;text-align:center;padding:16px;margin:12px 0}.timer strong{font-size:44px;display:block;color:#80ceff;line-height:1.1;font-variant-numeric:tabular-nums}.timer span{display:block;color:#c0d1dd;font-size:12px;margin-top:7px}#toggle{padding:14px}details pre{max-height:160px}</style>
-<h2>Instagram · fila local <span id="version">v1.21.0</span></h2>
-<p>Conta: <b id="account">Importe sua lista</b></p>
+<h2>Instagram · fila local <span id="version">v1.22.0</span></h2>
+<p>Conta: <b id="account">Identificada ao carregar listas</b></p>
 <div class="metrics">
+<div class="metric"><span>Seguidores na leitura</span><strong id="followers">—</strong><small>Quem segue você</small></div>
 <div class="metric"><span>Seguindo na leitura</span><strong id="following">—</strong><small>Última lista carregada</small></div>
 <div class="metric"><span>A remover</span><strong id="remaining">—</strong><small>Elegíveis ainda pendentes</small></div>
 <div class="metric green"><span>Removidos nesta execução</span><strong id="removed">0</strong><small>Confirmados pelo Instagram</small></div>
@@ -11,7 +12,8 @@
 </div>
 <div class="timer" id="timer"><strong id="countdown">Pronto</strong><span id="timerLabel">Inicie para carregar suas listas</span></div>
 <small>20 tentativas por lote · pausa preventiva de 30 segundos.<br>Falha isolada fica pendente; 5 falhas GraphQL consecutivas interrompem. Bloqueio explícito ou sessão inválida interrompem imediatamente.<br>Iniciar carrega e valida as listas e começa a remoção automaticamente. Logs e progresso são preservados.</small>
-<label>Importar lista local JSON <input id="importList" type="file" accept=".json,application/json"></label>
+<button id="loadLists">Carregar listas e comparar (sem remover)</button>
+<small>Busca quem você segue e quem segue você. As duas listas e a comparação ficam salvas localmente. Iniciar faz uma leitura nova antes de remover.</small>
 <button id="toggle">Iniciar</button><p id="notice"></p><p id="status">Carregando…</p>
 <small>Mantenha esta aba do Instagram aberta e o computador acordado. Pausar impede a próxima requisição; uma ação já enviada pode concluir.</small>
 <details><summary>Preparação e atividade</summary><pre id="preparation"></pre><pre id="logs"></pre></details><button id="download">Baixar log</button>
@@ -19,4 +21,4 @@
 <select id="probe"><option value="local">Verificações locais (sem requisição)</option><option value="info">Consulta antiga: users/info</option><option value="web-form">Identificação web: web_form_data</option></select>
 <small>Cada diagnóstico consulta no máximo uma rota. Disponível quando a aplicação está inativa.</small>
 <button id="diagnose">Diagnosticar</button> <button id="downloadDiagnostic">Baixar diagnóstico</button><pre id="diagnostic"></pre></details>
-<script src="input.js"></script><script src="dashboard.js"></script></html>
+<script src="dashboard.js"></script></html>

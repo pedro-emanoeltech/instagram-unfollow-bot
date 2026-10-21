@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = '1.21.0';
+  const VERSION = '1.22.0';
   let expectedAccount = ''; 
   if (globalThis.__igLocalWorker) return;
   globalThis.__igLocalWorker = true;
@@ -141,13 +141,14 @@
     const identity = await request('/api/v1/accounts/edit/web_form_data/');
     const form = identity.form_data;
     const responseId = form?.user_id ?? form?.username_id ?? form?.pk ?? form?.id;
-    if (identity.status !== 'ok' || (!expectedAccount || form?.username?.toLowerCase() !== expectedAccount) ||
+    if (identity.status !== 'ok' || (expectedAccount && form?.username?.toLowerCase() !== expectedAccount) ||
       (responseId != null && String(responseId) !== id)) throw new Error('Conta autenticada não corresponde à conta esperada.');
-    return id;
+    const username = form?.username?.toLowerCase();
+    if (!/^[a-z0-9._]{1,30}$/.test(username || '')) throw new Error('Conta autenticada inválida.');
+    return {id, username, totals: {followers:form.follower_count, following:form.following_count}};
   }
-  async function prepare(data) {
-    expectedAccount = data?.account;
-    if (!/^[a-z0-9._]{1,30}$/.test(expectedAccount || '')) throw new Error('Configure a conta esperada.');
+  async function prepare(data = {}) {
+    expectedAccount = data?.account || ''; 
     running = true; stopped = false;
     const report = { version: VERSION, time: new Date().toISOString(), ready: false, events: [] };
     const log = async (event, detail) => {
@@ -159,10 +160,11 @@
       if (previous.igLocalPreparation) await chrome.storage.local.set({igLocalPreparationHistory: [...(previous.igLocalPreparationHistory ?? []), previous.igLocalPreparation]});
       // An earlier snapshot must not remain usable after an incomplete new scan.
       await chrome.storage.local.set({ igLocalSnapshot: null });
-      if (data.source !== 'instagram-export' || !Array.isArray(data.users) || !Number.isSafeInteger(data.followers) || !Number.isSafeInteger(data.following)) throw new Error('Export inválido para conferência de integridade.');
-      const protectedFollowers = new Set(data.protectedFollowers ?? []);
-      const protectionValid = protectedFollowers.size === data.followers && [...protectedFollowers].every(name => typeof name === 'string' && /^[a-z0-9._]{1,30}$/.test(name));
-      report.accountId = await identify();
+      const identity = await identify();
+      expectedAccount = identity.username;
+      report.accountId = identity.id;
+      report.account = identity.username;
+      await log('authenticated', 'Conta conectada identificada; carregando listas atuais');
       const readList = async kind => {
         const users = new Map();
         const cursors = new Set();
@@ -185,40 +187,36 @@
           const next = result.next_max_id;
           await log('page_result', `${kind}: página ${page}, recebidos ${result.users.length}, novos ${users.size - previousCount}, repetidos ${result.users.length - (users.size - previousCount)}, próxima página ${next ? 'sim' : 'não'}, ordem ${kind === 'following' ? 'date_followed_latest' : 'padrão'}`);
           if (!next) {
-            // Count differences are warnings; partial followers require export protection.
-            const state = (await chrome.storage.local.get('igLocalState')).igLocalState;
-            const removed = kind === 'following' ? (state?.events ?? []).filter(event => event.event === 'unfollowed').length : 0;
-            const minimum = Math.max(0, data[kind] - removed);
-            if (users.size < minimum) {
-              if (kind === 'followers') {
-                if (!protectionValid) throw new Error('Proteção dos seguidores do export ausente ou inválida. Atualize o pacote completo da extensão.');
-                report.followers_partial = true;
-                await log('warning', `followers: ${users.size}/${minimum}. Diferença aceita; seguidores do export também serão preservados.`);
-              } else {
-                report.following_partial = true;
-                await log('warning', `following: usando apenas os ${users.size} IDs encontrados; diferença de ${minimum - users.size} frente ao export. Perfis sem ID ficam pendentes.`);
-              }
-            }
+            if (result.has_more === true || result.more_available === true) throw new Error(`Paginação de ${kind} indica continuação sem cursor.`);
+            const total = identity.totals[kind];
+            if (Number.isSafeInteger(total) && total >= 0 && users.size !== total)
+              throw new Error(`Lista ${kind} diverge do total informado (${users.size}/${total}); nova leitura necessária.`);
+            if (!Number.isSafeInteger(total)) await log('warning', `${kind}: fim da paginação; total independente não informado pelo Instagram.`);
             return Object.fromEntries(users);
           }
           if (!result.users.length || typeof next !== 'string' || cursors.has(next)) throw new Error('Paginação vazia ou repetida; leitura incompleta.');
+          if (users.size === previousCount) throw new Error('Página sem novos perfis; leitura incompleta.');
           cursors.add(next); cursor = next;
         }
         throw new Error('Limite de páginas atingido; leitura incompleta.');
       };
       const following = await readList('following');
       const followers = await readList('followers');
-      report.ready = true;
+      const followerIds = new Set(Object.values(followers));
+      const candidates = Object.keys(following).filter(name => !followers[name] && !followerIds.has(following[name]));
       report.following_count = Object.keys(following).length;
       report.followers_count = Object.keys(followers).length;
-      if (protectionValid) for (const username of protectedFollowers) {
-        if (!followers[username]) followers[username] = 'export-protected';
-      }
-      report.protected_count = Object.keys(followers).length;
-      report.candidates_with_id = data.users.filter(username => following[username] && !followers[username]).length;
-      const snapshot = { version: VERSION, accountId: report.accountId, capturedAt: Date.now(), following, followers, candidates: data.users };
-      await chrome.storage.local.set({ igLocalSnapshot: snapshot });
-      await log('ready', 'IDs preparados, listas atuais cruzadas; nenhum unfollow enviado.');
+      report.protected_count = report.followers_count;
+      report.candidates_with_id = candidates.length;
+      const verified = await identify();
+      if (verified.id !== identity.id || verified.username !== identity.username) throw new Error('Conta mudou durante a leitura.');
+      const snapshot = {version:VERSION, source:'instagram-current', account:identity.username, accountId:identity.id,
+        capturedAt:Date.now(), following, followers, candidates, paginationComplete:true};
+      await chrome.storage.local.set({igLocalSnapshot:snapshot});
+      report.ready = true;
+      await log('compared', `${report.following_count} seguindo; ${report.followers_count} seguidores; ${candidates.length} não seguem de volta.`);
+      await log('ready', 'Listas atuais e comparação salvas localmente; nenhum unfollow enviado na preparação.');
+      return {source:'instagram-current', account:identity.username, users:candidates};
     } catch (error) { await log('stopped', error.message); }
     finally { running = false; }
   }
@@ -296,7 +294,7 @@
       await save();
     };
     try {
-      if (data.source !== 'instagram-export' || !Array.isArray(data.users) || !data.users.every(value => typeof value === 'string' && /^[a-zA-Z0-9._]{1,30}$/.test(value))) throw new Error('Lista inválida.');
+      if (data?.source !== 'instagram-current' || !Array.isArray(data.users) || !data.users.every(value => typeof value === 'string' && /^[a-zA-Z0-9._]{1,30}$/.test(value))) throw new Error('Lista inválida.');
       const users = [...new Set(data.users)];
       const previous = (await chrome.storage.local.get('igLocalState')).igLocalState;
       const account = data.account;
@@ -320,7 +318,7 @@
           (responseId != null && String(responseId) !== id)) throw new Error('Conta autenticada não corresponde à conta configurada ou resposta web inválida.');
       await log('authenticated', account);
       const snapshot = (await chrome.storage.local.get('igLocalSnapshot')).igLocalSnapshot;
-      if (!snapshot || snapshot.version !== VERSION || snapshot.accountId !== id || !Number.isFinite(snapshot.capturedAt)) {
+      if (!snapshot || snapshot.version !== VERSION || snapshot.source !== 'instagram-current' || !snapshot.paginationComplete || snapshot.account !== account || snapshot.accountId !== id || !Number.isFinite(snapshot.capturedAt) || JSON.stringify(users) !== JSON.stringify(snapshot.candidates)) {
         throw new Error('Prepare os IDs e listas atuais primeiro.');
       }
       const unresolved = new Map();
@@ -428,12 +426,12 @@
         try {
           if (!lock) throw new Error('Outra aba já está executando.');
           await saveControl();
-          await prepare(message.data);
+          const prepared = await prepare();
           const preparation = (await chrome.storage.local.get('igLocalPreparation')).igLocalPreparation;
           if (!preparation?.ready) throw new Error('Preparação interrompida; confira o log.');
           await checkpoint();
           control.phase = 'removing'; await saveControl();
-          await run(message.data, true, message.pageContext);
+          await run(prepared, true, message.pageContext);
           const state = (await chrome.storage.local.get('igLocalState')).igLocalState;
           control.status = state?.status === 'Interrompido' ? 'error' : 'complete';
           if (control.status === 'error') control.error = state.events.filter(event => event.event === 'stopped').at(-1)?.detail ?? 'Execução interrompida; consulte o log.';
